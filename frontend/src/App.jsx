@@ -4,6 +4,7 @@
 // =============================================================================
 import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+ 
 
 import { useAuthStore } from './store/authStore';
 import { checkPermission, ACTIONS, ROLE_HOME } from './utils/constants';
@@ -15,6 +16,10 @@ import LoadingSpinner from './components/shared/LoadingSpinner';
 const Login = lazy(() => import('./pages/Auth/Login'));
 const Signup = lazy(() => import('./pages/Auth/Signup'));
 const ForgotPassword = lazy(() => import('./pages/Auth/ForgotPassword'));
+const QuotationDetail = lazy(
+  () => import("./pages/Quotations/QuotationDetail"),
+);
+const ApprovalDetail = lazy(() => import("./pages/Approvals/ApprovalDetail"));
 
 const Dashboard = lazy(() => import('./pages/Dashboard/Dashboard'));
 const Vendors = lazy(() => import('./pages/Vendors/Vendors'));
@@ -79,12 +84,35 @@ const PROTECTED_ROUTES = [
 
 export default function App() {
   return (
-    <Suspense fallback={<LoadingSpinner fullScreen label="Loading VendorBridge…" />}>
+    <Suspense
+      fallback={<LoadingSpinner fullScreen label="Loading VendorBridge…" />}
+    >
       <Routes>
         {/* Public auth routes */}
-        <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
-        <Route path="/signup" element={<PublicOnlyRoute><Signup /></PublicOnlyRoute>} />
-        <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPassword /></PublicOnlyRoute>} />
+        <Route
+          path="/login"
+          element={
+            <PublicOnlyRoute>
+              <Login />
+            </PublicOnlyRoute>
+          }
+        />
+        <Route
+          path="/signup"
+          element={
+            <PublicOnlyRoute>
+              <Signup />
+            </PublicOnlyRoute>
+          }
+        />
+        <Route
+          path="/forgot-password"
+          element={
+            <PublicOnlyRoute>
+              <ForgotPassword />
+            </PublicOnlyRoute>
+          }
+        />
 
         {/* Protected application shell */}
         <Route
@@ -105,6 +133,22 @@ export default function App() {
               }
             />
           ))}
+          <Route
+            path="/quotations/:id"
+            element={
+              <RequirePermission module={MODULES.QUOTATIONS}>
+                <QuotationDetail />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/approvals/:id"
+            element={
+              <RequirePermission module={MODULES.APPROVALS}>
+                <ApprovalDetail />
+              </RequirePermission>
+            }
+          />
           <Route path="/403" element={<Forbidden />} />
         </Route>
 

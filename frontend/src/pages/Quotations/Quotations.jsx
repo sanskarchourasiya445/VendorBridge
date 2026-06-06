@@ -5,6 +5,7 @@
 // =============================================================================
 import { useMemo, useState } from 'react';
 import { Search, FileText, List, GitCompareArrows } from 'lucide-react';
+import { useNavigate } from "react-router-dom"; 
 
 import PageHeader from '../../components/shared/PageHeader';
 import DataTable from '../../components/shared/DataTable';
@@ -19,6 +20,7 @@ const TABS = [
 ];
 
 export default function Quotations() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState('register');
   const [query, setQuery] = useState('');
 
@@ -67,7 +69,10 @@ export default function Quotations() {
 
   return (
     <div className="animate-fade-in">
-      <PageHeader title="Quotations" subtitle={`${QUOTATIONS.length} quotations received from vendors`} />
+      <PageHeader
+        title="Quotations"
+        subtitle={`${QUOTATIONS.length} quotations received from vendors`}
+      />
 
       {/* Tabs */}
       <div className="mb-5 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
@@ -76,7 +81,9 @@ export default function Quotations() {
             key={id}
             onClick={() => setTab(id)}
             className={`focus-ring inline-flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-semibold transition-colors ${
-              tab === id ? 'bg-primary-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+              tab === id
+                ? "bg-primary-600 text-white"
+                : "text-slate-600 hover:bg-slate-100"
             }`}
           >
             <Icon className="h-4 w-4" /> {label}
@@ -84,7 +91,7 @@ export default function Quotations() {
         ))}
       </div>
 
-      {tab === 'register' ? (
+      {tab === "register" ? (
         <>
           <div className="mb-4 relative max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -99,6 +106,7 @@ export default function Quotations() {
           <DataTable
             columns={columns}
             rows={rows}
+            onRowClick={(q) => navigate(`/quotations/${q.id}`)}
             emptyIcon={FileText}
             emptyTitle="No quotations found"
             emptyDescription="Try adjusting your search query."

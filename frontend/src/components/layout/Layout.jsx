@@ -8,6 +8,7 @@ import clsx from 'clsx';
 import { X } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import ChatBot from "../ChatBot";
 
 export default function Layout() {
   const [collapsed, setCollapsed] = useState(false);
@@ -17,27 +18,30 @@ export default function Layout() {
     <div className="flex h-screen overflow-hidden bg-slate-50">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
-        <Sidebar collapsed={collapsed} onToggleCollapse={() => setCollapsed((c) => !c)} />
+        <Sidebar
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed((c) => !c)}
+        />
       </div>
 
       {/* Mobile drawer */}
       <div
         className={clsx(
-          'fixed inset-0 z-50 lg:hidden',
-          mobileOpen ? 'pointer-events-auto' : 'pointer-events-none'
+          "fixed inset-0 z-50 lg:hidden",
+          mobileOpen ? "pointer-events-auto" : "pointer-events-none",
         )}
       >
         <div
           className={clsx(
-            'absolute inset-0 bg-slate-900/50 transition-opacity duration-300',
-            mobileOpen ? 'opacity-100' : 'opacity-0'
+            "absolute inset-0 bg-slate-900/50 transition-opacity duration-300",
+            mobileOpen ? "opacity-100" : "opacity-0",
           )}
           onClick={() => setMobileOpen(false)}
         />
         <div
           className={clsx(
-            'absolute left-0 top-0 h-full transition-transform duration-300',
-            mobileOpen ? 'translate-x-0' : '-translate-x-full'
+            "absolute left-0 top-0 h-full transition-transform duration-300",
+            mobileOpen ? "translate-x-0" : "-translate-x-full",
           )}
         >
           <div className="relative h-full">
@@ -63,6 +67,7 @@ export default function Layout() {
           </div>
         </main>
       </div>
+      <ChatBot />
     </div>
   );
 }

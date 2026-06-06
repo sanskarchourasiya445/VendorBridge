@@ -1,85 +1,67 @@
 // =============================================================================
-// services/aiService.js — VendorBridge AI layer.
+// services/aiService.js — VendorBridge AI layer (Groq / Llama).
 //
-// Provider-agnostic: uses Anthropic Claude if ANTHROPIC_API_KEY is set, else
-// OpenAI if OPENAI_API_KEY is set, else falls back to a deterministic local
-// heuristic so every AI feature still works (and demos) without any key.
+// Uses Groq (OpenAI-compatible) when a key is set, else falls back to a
+// deterministic local heuristic so every AI feature still works (and demos)
+// without any key.
 //
-// Set in .env:
-//   ANTHROPIC_API_KEY=sk-ant-...        (preferred)
-//   OPENAI_API_KEY=sk-...               (alternative)
-//   AI_MODEL=claude-3-5-sonnet-latest   (optional override)
+// Set in backend/.env (or Render Environment):
+//   GROK_API_KEY=gsk_...                 (your Groq key)
+//   GROK_MODEL=llama-3.1-8b-instant      (optional override)
+// Get a key at https://console.groq.com
 // =============================================================================
 
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const GROK_KEY = process.env.GROK_API_KEY || process.env.XAI_API_KEY;
+const GROK_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROK_MODEL = process.env.GROK_MODEL || "llama-3.1-8b-instant";
 
 function provider() {
-  if (ANTHROPIC_KEY) return 'anthropic';
-  if (OPENAI_KEY) return 'openai';
-  return 'heuristic';
+  return GROK_KEY ? "grok" : "heuristic";
 }
 
-export const aiStatus = () => ({ enabled: provider() !== 'heuristic', provider: provider() });
-
-const DEFAULT_MODEL =
-  process.env.AI_MODEL ||
-  (provider() === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-sonnet-latest');
+export const aiStatus = () => ({
+  enabled: provider() !== "heuristic",
+  provider: provider(),
+  model: provider() === "grok" ? GROK_MODEL : null,
+});
 
 // ---- low-level LLM call returning parsed JSON ------------------------------
 
-function extractJson(text = '') {
-  const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start === -1 || end === -1) throw new Error('No JSON object in model output.');
+function extractJson(text = "") {
+  const cleaned = text
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1)
+    throw new Error("No JSON object in model output.");
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
 async function chatJSON({ system, user, maxTokens = 1200 }) {
-  const p = provider();
+  if (provider() !== "grok") throw new Error("NO_PROVIDER");
 
-  if (p === 'anthropic') {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        max_tokens: maxTokens,
-        system,
-        messages: [{ role: 'user', content: user }],
-      }),
-    });
-    if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${await res.text()}`);
-    const data = await res.json();
-    const text = (data.content || []).map((b) => b.text || '').join('\n');
-    return extractJson(text);
-  }
-
-  if (p === 'openai') {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${OPENAI_KEY}` },
-      body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-      }),
-    });
-    if (!res.ok) throw new Error(`OpenAI API ${res.status}: ${await res.text()}`);
-    const data = await res.json();
-    return extractJson(data.choices?.[0]?.message?.content || '');
-  }
-
-  throw new Error('NO_PROVIDER');
+  const res = await fetch(GROK_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${GROK_KEY}`,
+    },
+    body: JSON.stringify({
+      model: GROK_MODEL,
+      max_tokens: maxTokens,
+      temperature: 0.4,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`Groq API ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return extractJson(data.choices?.[0]?.message?.content || "");
 }
 
 // ---- objective metrics (always computed, key or no key) --------------------
@@ -87,8 +69,12 @@ async function chatJSON({ system, user, maxTokens = 1200 }) {
 function objectiveMetrics(quotations) {
   if (!quotations.length) return {};
   const byPrice = [...quotations].sort((a, b) => a.grandTotal - b.grandTotal);
-  const byDelivery = [...quotations].sort((a, b) => a.deliveryDays - b.deliveryDays);
-  const byRating = [...quotations].sort((a, b) => (b.vendorRating || 0) - (a.vendorRating || 0));
+  const byDelivery = [...quotations].sort(
+    (a, b) => a.deliveryDays - b.deliveryDays,
+  );
+  const byRating = [...quotations].sort(
+    (a, b) => (b.vendorRating || 0) - (a.vendorRating || 0),
+  );
   return {
     lowestPriceId: byPrice[0].id,
     highestPriceId: byPrice[byPrice.length - 1].id,
@@ -117,18 +103,32 @@ function heuristicCompare(rfq, quotations) {
       const priceScore = norm(q.grandTotal, minP, maxP, true); // lower is better
       const deliveryScore = norm(q.deliveryDays, minD, maxD, true); // faster is better
       const ratingScore = (q.vendorRating || 0) / 5;
-      const score = Math.round((priceScore * 0.5 + deliveryScore * 0.3 + ratingScore * 0.2) * 100);
+      const score = Math.round(
+        (priceScore * 0.5 + deliveryScore * 0.3 + ratingScore * 0.2) * 100,
+      );
       const strengths = [];
       const risks = [];
-      if (q.grandTotal === minP) strengths.push('Lowest total price (L1)');
-      if (q.deliveryDays === minD) strengths.push(`Fastest delivery (${q.deliveryDays} days)`);
-      if ((q.vendorRating || 0) >= 4.5) strengths.push(`Strong vendor rating (${q.vendorRating})`);
-      if (q.grandTotal === maxP) risks.push('Highest quoted price');
-      if (q.deliveryDays === maxD) risks.push(`Slowest delivery (${q.deliveryDays} days)`);
-      if ((q.vendorRating || 0) < 3.5) risks.push(`Below-average vendor rating (${q.vendorRating ?? 'n/a'})`);
-      const premium = minP ? Math.round(((q.grandTotal - minP) / minP) * 100) : 0;
+      if (q.grandTotal === minP) strengths.push("Lowest total price (L1)");
+      if (q.deliveryDays === minD)
+        strengths.push(`Fastest delivery (${q.deliveryDays} days)`);
+      if ((q.vendorRating || 0) >= 4.5)
+        strengths.push(`Strong vendor rating (${q.vendorRating})`);
+      if (q.grandTotal === maxP) risks.push("Highest quoted price");
+      if (q.deliveryDays === maxD)
+        risks.push(`Slowest delivery (${q.deliveryDays} days)`);
+      if ((q.vendorRating || 0) < 3.5)
+        risks.push(`Below-average vendor rating (${q.vendorRating ?? "n/a"})`);
+      const premium = minP
+        ? Math.round(((q.grandTotal - minP) / minP) * 100)
+        : 0;
       if (premium > 0) risks.push(`${premium}% costlier than L1`);
-      return { quotationId: q.id, vendorName: q.vendorName, score, strengths, risks };
+      return {
+        quotationId: q.id,
+        vendorName: q.vendorName,
+        score,
+        strengths,
+        risks,
+      };
     })
     .sort((a, b) => b.score - a.score);
 
@@ -141,11 +141,11 @@ function heuristicCompare(rfq, quotations) {
       `delivery (30%) and vendor rating (20%) for this RFQ.`,
     summary:
       `${quotations.length} quotations compared. Price range ` +
-      `₹${minP.toLocaleString('en-IN')}–₹${maxP.toLocaleString('en-IN')}, ` +
+      `₹${minP.toLocaleString("en-IN")}–₹${maxP.toLocaleString("en-IN")}, ` +
       `delivery ${minD}–${maxD} days.`,
     ranking,
     flags: [],
-    engine: 'heuristic',
+    engine: "heuristic",
   };
 }
 
@@ -154,18 +154,23 @@ function heuristicCompare(rfq, quotations) {
 export async function compareQuotations({ rfq, quotations }) {
   const metrics = objectiveMetrics(quotations);
   if (!quotations.length) {
-    return { ...metrics, ranking: [], summary: 'No quotations to compare.', engine: provider() };
+    return {
+      ...metrics,
+      ranking: [],
+      summary: "No quotations to compare.",
+      engine: provider(),
+    };
   }
 
-  if (provider() === 'heuristic') {
+  if (provider() === "heuristic") {
     return { ...heuristicCompare(rfq, quotations), ...metrics };
   }
 
   const system =
-    'You are a senior procurement analyst for an Indian B2B company. You evaluate ' +
-    'vendor quotations on price, delivery time, vendor reliability/rating, payment ' +
-    'terms and stated risks. Be objective and concise. Respond ONLY with valid JSON, ' +
-    'no markdown, no commentary.';
+    "You are a senior procurement analyst for an Indian B2B company. You evaluate " +
+    "vendor quotations on price, delivery time, vendor reliability/rating, payment " +
+    "terms and stated risks. Be objective and concise. Respond ONLY with valid JSON, " +
+    "no markdown, no commentary.";
 
   const compact = quotations.map((q) => ({
     quotationId: q.id,
@@ -174,13 +179,13 @@ export async function compareQuotations({ rfq, quotations }) {
     deliveryDays: q.deliveryDays,
     paymentTerms: q.paymentTerms,
     vendorRating: q.vendorRating ?? null,
-    notes: q.notes || '',
+    notes: q.notes || "",
   }));
 
   const user =
-    `RFQ: ${rfq?.title || 'N/A'} (budget ₹${rfq?.budget ?? 'n/a'}, category ${rfq?.category || 'n/a'}).\n` +
+    `RFQ: ${rfq?.title || "N/A"} (budget ₹${rfq?.budget ?? "n/a"}, category ${rfq?.category || "n/a"}).\n` +
     `Quotations:\n${JSON.stringify(compact, null, 2)}\n\n` +
-    'Return JSON shaped exactly as:\n' +
+    "Return JSON shaped exactly as:\n" +
     '{ "recommendedQuotationId": string, "recommendationReason": string, ' +
     '"summary": string, "ranking": [ { "quotationId": string, "vendorName": string, ' +
     '"score": number (0-100), "strengths": string[], "risks": string[] } ], ' +
@@ -191,41 +196,58 @@ export async function compareQuotations({ rfq, quotations }) {
     return { ...result, ...metrics, engine: provider() };
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('[ai] compareQuotations fell back to heuristic:', err.message);
-    return { ...heuristicCompare(rfq, quotations), ...metrics, engine: 'heuristic-fallback' };
+    console.error(
+      "[ai] compareQuotations fell back to heuristic:",
+      err.message,
+    );
+    return {
+      ...heuristicCompare(rfq, quotations),
+      ...metrics,
+      engine: "heuristic-fallback",
+    };
   }
 }
 
 // ---- public: generate an RFQ draft from plain language ---------------------
 
 function heuristicRfq(prompt) {
-  const qtyMatch = prompt.match(/(\d{1,6})\s*(units?|nos|pcs|pieces|laptops|chairs|kg|tons?|reams|licen[cs]es?)?/i);
+  const qtyMatch = prompt.match(
+    /(\d{1,6})\s*(units?|nos|pcs|pieces|laptops|chairs|kg|tons?|reams|licen[cs]es?)?/i,
+  );
   const qty = qtyMatch ? Number(qtyMatch[1]) : 1;
-  const title = prompt.trim().slice(0, 70).replace(/\.$/, '');
+  const title = prompt.trim().slice(0, 70).replace(/\.$/, "");
   return {
     title: title.charAt(0).toUpperCase() + title.slice(1),
-    category: 'General',
+    category: "General",
     description: `Auto-drafted from request: "${prompt.trim()}". Please review and refine specs, quantities and delivery terms before publishing.`,
-    items: [{ name: title, quantity: qty, unit: 'nos', specs: '' }],
-    suggestedCategories: ['General', 'IT Hardware', 'Office Supplies', 'Raw Materials', 'Logistics & Transport'],
+    items: [{ name: title, quantity: qty, unit: "nos", specs: "" }],
+    suggestedCategories: [
+      "General",
+      "IT Hardware",
+      "Office Supplies",
+      "Raw Materials",
+      "Logistics & Transport",
+    ],
     suggestedDeadlineDays: 14,
-    notes: 'Generated by the local fallback engine. Add an AI key for richer drafts.',
-    engine: 'heuristic',
+    notes:
+      "Generated by the local fallback engine. Add a GROK_API_KEY for richer drafts.",
+    engine: "heuristic",
   };
 }
 
 export async function generateRfq({ prompt }) {
-  if (!prompt || !prompt.trim()) throw new Error('A description of what you need is required.');
+  if (!prompt || !prompt.trim())
+    throw new Error("A description of what you need is required.");
 
-  if (provider() === 'heuristic') return heuristicRfq(prompt);
+  if (provider() === "heuristic") return heuristicRfq(prompt);
 
   const system =
-    'You convert a procurement officer\'s plain-language need into a structured RFQ ' +
-    'for an Indian company. Infer sensible line items, quantities and units. Respond ' +
-    'ONLY with valid JSON, no markdown.';
+    "You convert a procurement officer's plain-language need into a structured RFQ " +
+    "for an Indian company. Infer sensible line items, quantities and units. Respond " +
+    "ONLY with valid JSON, no markdown.";
   const user =
     `Need: "${prompt.trim()}"\n\n` +
-    'Return JSON shaped exactly as:\n' +
+    "Return JSON shaped exactly as:\n" +
     '{ "title": string, "category": string, "description": string, ' +
     '"items": [ { "name": string, "quantity": number, "unit": string, "specs": string } ], ' +
     '"suggestedCategories": string[], "suggestedDeadlineDays": number, "notes": string }.';
@@ -235,36 +257,39 @@ export async function generateRfq({ prompt }) {
     return { ...result, engine: provider() };
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error('[ai] generateRfq fell back to heuristic:', err.message);
-    return { ...heuristicRfq(prompt), engine: 'heuristic-fallback' };
+    console.error("[ai] generateRfq fell back to heuristic:", err.message);
+    return { ...heuristicRfq(prompt), engine: "heuristic-fallback" };
   }
 }
 
 // ---- public: natural-language insight over procurement data ----------------
 
 export async function askInsight({ question, context }) {
-  if (!question || !question.trim()) throw new Error('A question is required.');
+  if (!question || !question.trim()) throw new Error("A question is required.");
 
-  if (provider() === 'heuristic') {
+  if (provider() === "heuristic") {
     return {
       answer:
-        'AI insights need an ANTHROPIC_API_KEY or OPENAI_API_KEY. Once set, ask questions ' +
-        'like "which vendor has the highest spend?" or "what is overdue this month?".',
-      engine: 'heuristic',
+        "AI insights need a GROK_API_KEY. Once set, ask questions like " +
+        '"which vendor has the highest spend?" or "what is overdue this month?".',
+      engine: "heuristic",
     };
   }
 
   const system =
-    'You are VendorBridge\'s procurement analytics assistant. Answer the user\'s ' +
-    'question using ONLY the provided JSON context. Be brief and specific with numbers. ' +
+    "You are VendorBridge's procurement analytics assistant. Answer the user's " +
+    "question using ONLY the provided JSON context. Be brief and specific with numbers. " +
     'Respond ONLY with valid JSON: { "answer": string }.';
   const user = `Context:\n${JSON.stringify(context).slice(0, 12000)}\n\nQuestion: ${question.trim()}`;
 
   try {
     const result = await chatJSON({ system, user, maxTokens: 600 });
-    return { answer: result.answer || 'No answer produced.', engine: provider() };
+    return {
+      answer: result.answer || "No answer produced.",
+      engine: provider(),
+    };
   } catch (err) {
-    return { answer: `AI request failed: ${err.message}`, engine: 'error' };
+    return { answer: `AI request failed: ${err.message}`, engine: "error" };
   }
 }
 

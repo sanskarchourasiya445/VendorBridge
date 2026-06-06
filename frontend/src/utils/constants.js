@@ -20,10 +20,10 @@ export const ROLES = {
 };
 
 export const ROLE_LABELS = {
-  [ROLES.ADMIN]: 'Administrator',
-  [ROLES.PROCUREMENT_MANAGER]: 'Procurement Manager',
-  [ROLES.APPROVER]: 'Approving Authority',
-  [ROLES.VIEWER]: 'Viewer',
+  [ROLES.ADMIN]: "Administrator",
+  [ROLES.PROCUREMENT_MANAGER]: "Procurement Manager",
+  [ROLES.APPROVER]: "Approving Authority",
+  [ROLES.VIEWER]: "Vendor",
 };
 
 export const ROLE_DESCRIPTIONS = {
