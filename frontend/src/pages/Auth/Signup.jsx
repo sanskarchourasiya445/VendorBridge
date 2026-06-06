@@ -37,8 +37,8 @@ export default function Signup() {
     defaultValues: { name: '', email: '', role: ROLES.VIEWER, password: '', confirm: '' },
   });
 
-  const onSubmit = async (v) => {
-    const res = await signup({ name: v.name, email: v.email, password: v.password, role: v.role });
+  const onSubmit = (v) => {
+    const res = signup({ name: v.name, email: v.email, password: v.password, role: v.role });
     if (res.success) {
       toast.success('Account created. Welcome to VendorBridge!');
       navigate(res.home, { replace: true });

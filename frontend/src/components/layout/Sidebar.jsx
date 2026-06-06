@@ -1,9 +1,8 @@
 // =============================================================================
 // VendorBridge — Sidebar
-// Dark, collapsible, role-aware navigation. The user footer is now an
-// interactive menu (My Profile / Sign out) plus a quick sign-out icon.
+// Dark (#0f172a), collapsible, role-aware navigation with active states,
+// a brand logo, and a user footer with logout.
 // =============================================================================
-import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -17,9 +16,7 @@ import {
   History,
   Users,
   ChevronLeft,
-  ChevronUp,
   LogOut,
-  User,
   Boxes,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -30,6 +27,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { APP_NAME, APP_TAGLINE, ROLE_LABELS } from '../../utils/constants';
 import { getInitials } from '../../utils/formatters';
 
+// Resolve the icon name stored in NAV_ITEMS to an actual lucide component.
 const ICONS = {
   LayoutDashboard,
   Building2,
@@ -48,27 +46,7 @@ export default function Sidebar({ collapsed = false, onToggleCollapse, onNavigat
   const { user, role, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [menuOpen, setMenuOpen] = useState(false);
-  const footerRef = useRef(null);
-
-  // Close the footer menu on outside click / Escape.
-  useEffect(() => {
-    function onDoc(e) {
-      if (footerRef.current && !footerRef.current.contains(e.target)) setMenuOpen(false);
-    }
-    function onKey(e) {
-      if (e.key === 'Escape') setMenuOpen(false);
-    }
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, []);
-
   const handleLogout = () => {
-    setMenuOpen(false);
     logout();
     toast.success('Signed out successfully');
     navigate('/login', { replace: true });
@@ -145,6 +123,7 @@ export default function Sidebar({ collapsed = false, onToggleCollapse, onNavigat
             >
               {({ isActive }) => (
                 <>
+                  {/* Active accent bar */}
                   {isActive && !collapsed && (
                     <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-white/80" />
                   )}
@@ -163,57 +142,48 @@ export default function Sidebar({ collapsed = false, onToggleCollapse, onNavigat
         })}
       </nav>
 
-      {/* User footer (interactive) */}
-      <div className="relative border-t border-sidebar-border p-3" ref={footerRef}>
-        {/* Pop-up menu */}
-        {menuOpen && !collapsed && (
-          <div className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-lg border border-sidebar-border bg-[#111c33] shadow-xl">
-            <div className="border-b border-sidebar-border px-3 py-2">
-              <p className="truncate text-[13px] font-semibold text-white">{user?.name}</p>
-              <p className="truncate text-[11px] text-sidebar-muted">{user?.email}</p>
-            </div>
-            <button
-              onClick={() => { setMenuOpen(false); toast('Profile page coming soon'); }}
-              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-sidebar-text hover:bg-sidebar-hover hover:text-white"
-            >
-              <User className="h-4 w-4" /> My Profile
-            </button>
-            <button
-              onClick={handleLogout}
-              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-red-300 hover:bg-danger-600 hover:text-white"
-            >
-              <LogOut className="h-4 w-4" /> Sign out
-            </button>
-          </div>
-        )}
-
-        {!collapsed ? (
-          <button
-            type="button"
-            onClick={() => setMenuOpen((o) => !o)}
-            className="flex w-full items-center gap-3 rounded-lg bg-sidebar-hover/60 p-2 text-left transition-colors hover:bg-sidebar-hover"
+      {/* User footer */}
+      <div className="border-t border-sidebar-border p-3">
+        <div
+          className={clsx(
+            'flex items-center gap-3 rounded-lg p-2',
+            collapsed ? 'justify-center' : 'bg-sidebar-hover/60'
+          )}
+        >
+          <div
+            className={clsx(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white',
+              user?.avatarColor || 'bg-primary-600'
+            )}
           >
-            <div
-              className={clsx(
-                'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white',
-                user?.avatarColor || 'bg-primary-600'
-              )}
-            >
-              {getInitials(user?.name || 'User')}
-            </div>
+            {getInitials(user?.name || 'User')}
+          </div>
+          {!collapsed && (
             <div className="min-w-0 flex-1 animate-fade-in">
               <p className="truncate text-[13px] font-semibold text-white">{user?.name}</p>
-              <p className="truncate text-[11px] text-sidebar-muted">{ROLE_LABELS[role] || 'Member'}</p>
+              <p className="truncate text-[11px] text-sidebar-muted">
+                {ROLE_LABELS[role] || 'Member'}
+              </p>
             </div>
-            <ChevronUp className={clsx('h-4 w-4 text-sidebar-muted transition-transform', menuOpen && 'rotate-180')} />
-          </button>
-        ) : (
+          )}
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              aria-label="Sign out"
+              className="rounded-md p-1.5 text-sidebar-muted transition-colors hover:bg-danger-600 hover:text-white"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        {collapsed && (
           <button
             type="button"
             onClick={handleLogout}
             aria-label="Sign out"
             title="Sign out"
-            className="flex w-full items-center justify-center rounded-md p-2 text-sidebar-muted transition-colors hover:bg-danger-600 hover:text-white"
+            className="mt-2 flex w-full items-center justify-center rounded-md p-2 text-sidebar-muted transition-colors hover:bg-danger-600 hover:text-white"
           >
             <LogOut className="h-4 w-4" />
           </button>

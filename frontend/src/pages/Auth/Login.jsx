@@ -41,8 +41,8 @@ export default function Login() {
     navigate(from && from !== '/login' ? from : home, { replace: true });
   };
 
- const onSubmit = async (values) => {
-    const res = await login(values);
+  const onSubmit = (values) => {
+    const res = login(values);
     if (res.success) {
       toast.success(`Welcome back, ${res.user.name.split(' ')[0]}!`);
       redirectTo(res.home);
@@ -51,9 +51,8 @@ export default function Login() {
     }
   };
 
-  
-  const quickLogin = async (role) => {
-    const res = await loginAsRole(role);
+  const quickLogin = (role) => {
+    const res = loginAsRole(role);
     if (res.success) {
       toast.success(`Signed in as ${ROLE_LABELS[role]}`);
       redirectTo(res.home);

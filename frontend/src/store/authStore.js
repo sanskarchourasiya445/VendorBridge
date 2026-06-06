@@ -1,23 +1,22 @@
 // =============================================================================
 // VendorBridge — Auth Store (Zustand + persist)
-// Authenticates against the REAL backend (/api/auth/*). The JWT is persisted
-// and re-attached to the API client on reload; the session is re-validated
-// via /api/auth/me. New signups are stored in MongoDB by the backend.
+// Handles login/logout, the current session user, role, and signup.
+// Authenticates against the demo USERS in mockData (localStorage-only demo).
 // =============================================================================
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { authApi, setApiToken } from '../lib/api';
+import { USERS } from '../data/mockData';
 import { ROLES, ROLE_HOME } from '../utils/constants';
 
 const STORAGE_KEY = 'vendorbridge.auth';
 
-// Demo accounts (match the backend seed) for the one-click role buttons.
-const DEMO_CREDENTIALS = {
-  [ROLES.ADMIN]: { email: 'admin@vendorbridge.in', password: 'Admin@123' },
-  [ROLES.PROCUREMENT_MANAGER]: { email: 'manager@vendorbridge.in', password: 'Manager@123' },
-  [ROLES.APPROVER]: { email: 'approver@vendorbridge.in', password: 'Approve@123' },
-  [ROLES.VIEWER]: { email: 'viewer@vendorbridge.in', password: 'Viewer@123' },
-};
+/** Strip the password before putting a user into session state. */
+function sanitize(user) {
+  if (!user) return null;
+  // eslint-disable-next-line no-unused-vars
+  const { password, ...safe } = user;
+  return safe;
+}
 
 export const useAuthStore = create(
   persist(
@@ -25,103 +24,123 @@ export const useAuthStore = create(
       // ----- state -----
       user: null,
       role: null,
-      token: null,
       isAuthenticated: false,
+      // Seeded registry so newly-signed-up users can log in within the session.
+      registry: USERS,
       lastError: null,
 
       // ----- selectors -----
-      getHomeRoute: () => ROLE_HOME[get().role] || '/dashboard',
+      getHomeRoute: () => {
+        const role = get().role;
+        return ROLE_HOME[role] || '/dashboard';
+      },
 
       // ----- actions -----
-      login: async ({ email, password }) => {
-        try {
-          const data = await authApi.login(String(email).trim(), password);
-          setApiToken(data.token);
-          set({
-            user: data.user,
-            role: data.user.role,
-            token: data.token,
-            isAuthenticated: true,
-            lastError: null,
-          });
-          return { success: true, user: data.user, home: data.home || ROLE_HOME[data.user.role] || '/dashboard' };
-        } catch (err) {
-          set({ lastError: err.message });
-          return { success: false, error: err.message };
+      login: ({ email, password }) => {
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const match = get().registry.find(
+          (u) =>
+            u.email.toLowerCase() === normalizedEmail &&
+            u.password === password
+        );
+
+        if (!match) {
+          set({ lastError: 'Invalid email or password.' });
+          return { success: false, error: 'Invalid email or password.' };
         }
-      },
-
-      signup: async ({ name, email, password, role = ROLES.VIEWER }) => {
-        try {
-          const data = await authApi.signup({ name, email: String(email).trim(), password, role });
-          setApiToken(data.token);
-          set({
-            user: data.user,
-            role: data.user.role,
-            token: data.token,
-            isAuthenticated: true,
-            lastError: null,
-          });
-          return { success: true, user: data.user, home: data.home || ROLE_HOME[data.user.role] || '/dashboard' };
-        } catch (err) {
-          set({ lastError: err.message });
-          return { success: false, error: err.message };
+        if (match.status === 'inactive') {
+          set({ lastError: 'This account is inactive. Contact your administrator.' });
+          return { success: false, error: 'This account is inactive. Contact your administrator.' };
         }
+
+        const safeUser = sanitize({ ...match, lastLogin: new Date().toISOString() });
+        set({
+          user: safeUser,
+          role: safeUser.role,
+          isAuthenticated: true,
+          lastError: null,
+        });
+        return { success: true, user: safeUser, home: ROLE_HOME[safeUser.role] || '/dashboard' };
       },
 
-      // One-click demo sign-in used by the Login screen's role chips.
-      loginAsRole: async (role) => {
-        const creds = DEMO_CREDENTIALS[role];
-        if (!creds) return { success: false, error: 'No demo account for this role.' };
-        return get().login(creds);
-      },
-
-      // Re-validate a persisted session on app load (refreshes the user).
-      restore: async () => {
-        const token = get().token;
-        if (!token) return;
-        setApiToken(token);
-        try {
-          const data = await authApi.me();
-          set({ user: data.user, role: data.user.role, isAuthenticated: true });
-        } catch {
-          // Token invalid/expired — clear the session.
-          setApiToken(null);
-          set({ user: null, role: null, token: null, isAuthenticated: false });
+      signup: ({ name, email, password, role = ROLES.VIEWER, designation = 'Team Member', department = 'General' }) => {
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const exists = get().registry.some(
+          (u) => u.email.toLowerCase() === normalizedEmail
+        );
+        if (exists) {
+          set({ lastError: 'An account with this email already exists.' });
+          return { success: false, error: 'An account with this email already exists.' };
         }
+
+        const newUser = {
+          id: `USR-${String(get().registry.length + 1).padStart(3, '0')}`,
+          name: name?.trim() || 'New User',
+          email: normalizedEmail,
+          password,
+          role,
+          designation,
+          department,
+          phone: '',
+          avatarColor: 'bg-primary-600',
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString(),
+        };
+
+        set((state) => ({ registry: [...state.registry, newUser], lastError: null }));
+
+        const safeUser = sanitize(newUser);
+        set({ user: safeUser, role: safeUser.role, isAuthenticated: true });
+        return { success: true, user: safeUser, home: ROLE_HOME[safeUser.role] || '/dashboard' };
       },
 
-      updateProfile: (patch) =>
-        set((state) => ({ user: state.user ? { ...state.user, ...patch } : state.user })),
+      // Demo helper: one-click sign-in used by the Login screen's role chips.
+      loginAsRole: (role) => {
+        const demo = get().registry.find((u) => u.role === role && u.status === 'active');
+        if (!demo) return { success: false, error: 'No demo account for this role.' };
+        return get().login({ email: demo.email, password: demo.password });
+      },
 
-      // No backend reset endpoint yet — kept synchronous so the Forgot
-      // Password page (which calls it without await) keeps working.
-      resetPassword: () => ({
-        success: true,
-        info: 'Password reset is a demo flow. Ask an admin to set a new password.',
-      }),
+      updateProfile: (patch) => {
+        set((state) => ({
+          user: state.user ? { ...state.user, ...patch } : state.user,
+        }));
+      },
+
+      // Used during password-reset demo flow (in-memory only).
+      resetPassword: ({ email, newPassword }) => {
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const exists = get().registry.some((u) => u.email.toLowerCase() === normalizedEmail);
+        if (!exists) {
+          return { success: false, error: 'No account found with that email.' };
+        }
+        set((state) => ({
+          registry: state.registry.map((u) =>
+            u.email.toLowerCase() === normalizedEmail ? { ...u, password: newPassword } : u
+          ),
+        }));
+        return { success: true };
+      },
 
       clearError: () => set({ lastError: null }),
 
       logout: () => {
-        setApiToken(null);
-        set({ user: null, role: null, token: null, isAuthenticated: false, lastError: null });
+        set({ user: null, role: null, isAuthenticated: false, lastError: null });
       },
     }),
     {
       name: STORAGE_KEY,
+      // Persist only the session + registry; not transient errors.
       partialize: (state) => ({
         user: state.user,
         role: state.role,
-        token: state.token,
         isAuthenticated: state.isAuthenticated,
+        registry: state.registry,
       }),
-      // Re-attach the token to the API client as soon as the store rehydrates.
-      onRehydrateStorage: () => (restored) => {
-        if (restored?.token) setApiToken(restored.token);
-      },
     }
   )
 );
 
+// Non-hook accessor for use outside React (e.g. utils, route guards).
 export const getAuthSnapshot = () => useAuthStore.getState();

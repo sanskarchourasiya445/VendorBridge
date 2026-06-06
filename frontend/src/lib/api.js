@@ -1,8 +1,8 @@
 // =============================================================================
-// lib/api.js — fetch wrapper for the VendorBridge backend.
+// lib/api.js — thin fetch wrapper for the VendorBridge backend.
 // Base URL comes from VITE_API_URL (see frontend/.env.example), defaulting to
-// the local Express server. The bearer token is set after login via
-// setApiToken() and attached to every request.
+// the local Express server. A bearer token can be attached if/when the app is
+// wired to backend auth; the AI endpoints work without one.
 // =============================================================================
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -24,7 +24,7 @@ async function request(path, { method = 'GET', body, signal } = {}) {
       signal,
     });
   } catch {
-    throw new Error('Cannot reach the VendorBridge API. Is the backend running?');
+    throw new Error('Cannot reach the VendorBridge API. Is the backend running on port 4000?');
   }
 
   const payload = await res.json().catch(() => ({}));
@@ -33,14 +33,6 @@ async function request(path, { method = 'GET', body, signal } = {}) {
   }
   return payload.data;
 }
-
-// ---- Auth endpoints --------------------------------------------------------
-export const authApi = {
-  login: (email, password) =>
-    request('/auth/login', { method: 'POST', body: { email, password } }),
-  signup: (payload) => request('/auth/signup', { method: 'POST', body: payload }),
-  me: () => request('/auth/me'),
-};
 
 // ---- AI endpoints ----------------------------------------------------------
 export const aiApi = {
@@ -53,4 +45,4 @@ export const aiApi = {
     request('/ai/insights', { method: 'POST', body: { question } }),
 };
 
-export default { setApiToken, authApi, aiApi };
+export default { setApiToken, aiApi };
