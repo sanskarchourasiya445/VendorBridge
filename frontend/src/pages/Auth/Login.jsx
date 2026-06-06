@@ -40,7 +40,8 @@ export default function Login() {
     const from = location.state?.from;
     navigate(from && from !== '/login' ? from : home, { replace: true });
   };
-  const onSubmit = async (values) => {
+
+ const onSubmit = async (values) => {
     const res = await login(values);
     if (res.success) {
       toast.success(`Welcome back, ${res.user.name.split(' ')[0]}!`);
@@ -50,6 +51,7 @@ export default function Login() {
     }
   };
 
+  
   const quickLogin = async (role) => {
     const res = await loginAsRole(role);
     if (res.success) {
